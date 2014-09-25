@@ -20,10 +20,10 @@ class ComPort( object ):
     self.device = usb_device
 
     cfg = usb_device.get_active_configuration()
-    cmd_itfs = usb.util.find_descriptor( cfg, find_all = True,
-        custom_match = lambda e: (e.bInterfaceClass == 0x2) )
-    data_itfs = usb.util.find_descriptor( cfg, find_all = True,
-        custom_match = lambda e: (e.bInterfaceClass == 0xA) )
+    cmd_itfs = list(usb.util.find_descriptor( cfg, find_all = True,
+        custom_match = lambda e: (e.bInterfaceClass == 0x2) ))
+    data_itfs = list(usb.util.find_descriptor( cfg, find_all = True,
+        custom_match = lambda e: (e.bInterfaceClass == 0xA) ))
 
     if( len(cmd_itfs) != len(data_itfs) ):
       log.debug( "COM port data / command interface mismatch" )
@@ -39,8 +39,9 @@ class ComPort( object ):
       self.device.detach_kernel_driver( cmd_itf.bInterfaceNumber )
     except usb.USBError:
       pass
+    except NotImplementedError:
+      pass
 
-    self.comm = cmd_itf.endpoints[0]
     self.ep_in = usb.util.find_descriptor( data_itf,
         custom_match = lambda e: ( e.bEndpointAddress & 0x80 ) )
     self.ep_out = usb.util.find_descriptor( data_itf,
@@ -102,11 +103,13 @@ if __name__ == '__main__':
     except:
       print("Please enter number between 0 and {}".format(len(devices) - 1))
 
-  try:
-    d = devices[selection]
-    p = ComPort(d)
-  except:
-    print("Cannot open com port for {}".format(d))
+  #try:
+  d = devices[selection]
+  p = ComPort(d)
+  #except Exception as e:
+  #  print("Cannot open com port for {}".format(str(d)))
+  #  print(str(e))
+  #  exit()
 
   input_queue = Queue.LifoQueue()
   def readinput():
