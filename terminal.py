@@ -15,7 +15,10 @@ import usb.core as usb
 import logging as log
 import threading
 import sys
-import Queue
+try:
+  import Queue
+except ImportError:
+  import queue as Queue
 
 class ComPort( object ):
   def __init__( self, usb_device ):
