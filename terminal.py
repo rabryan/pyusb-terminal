@@ -19,6 +19,10 @@ try:
   import Queue
 except ImportError:
   import queue as Queue
+import os
+if os.name == "nt":
+  import msvcrt
+
 
 class ComPort( object ):
   def __init__( self, usb_device ):
@@ -119,7 +123,11 @@ if __name__ == '__main__':
   input_queue = Queue.LifoQueue()
   def readinput():
     while True:
-      command = sys.stdin.read(1)
+      if os.name == "nt":
+        command = msvcrt.getch()
+      else:
+        command = sys.stdin.read(1)
+
       input_queue.put(command)
 
   input_thread = threading.Thread(target=readinput)
