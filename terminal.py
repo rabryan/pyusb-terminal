@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from __future__ import print_function
 from __future__ import division
 from __future__ import absolute_import
@@ -13,7 +15,10 @@ import usb.core as usb
 import logging as log
 import threading
 import sys
-import Queue
+try:
+  import Queue
+except ImportError:
+  import queue as Queue
 
 class ComPort( object ):
   def __init__( self, usb_device ):
