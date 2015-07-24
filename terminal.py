@@ -71,6 +71,9 @@ class ComPort( object ):
   def __init__( self, usb_device ):
     self.device = usb_device
     self._isFTDI = False
+    self._rxinterval = 0.005            # sec
+    self._rxqueue = queue.Queue()
+    self._rxthread = threading.Thread( target=self._read )
 
     cfg = usb_device.get_active_configuration()
 
@@ -107,28 +110,47 @@ class ComPort( object ):
     self.ep_out = usb.util.find_descriptor( data_itf,
         custom_match = lambda e: not (e.bEndpointAddress & 0x80))
 
-  def write( self, data ):
-    ret = self.ep_out.write( data )
-    if( len(data) != ret ):
-      log.error( "Bytes written mismatch {0} vs {1}".format( len(data), ret)  )
+    self._startRx()
 
-  def read( self, timeout = None, attempts = 4 ):
-    ret = []
-    size = self.ep_in.wMaxPacketSize
-    kwargs = dict() if timeout is None else { "timeout":timeout }
-    for i in range( attempts ):
+  def _startRx( self ):
+    self._rxthread.daemon = True
+    self._rxthread.start()
+
+  def _read( self ):
+    """ check ep for data, add it to queue and sleep for interval """
+    while True:
       try:
-        rv = self.ep_in.read( size, **kwargs )
+        rv = self.ep_in.read( self.ep_in.wMaxPacketSize )
         if self._isFTDI:
           status = rv[:2]       # FTDI prepends 2 flow control characters
+          if status[0] != 1 or status [1] != 0x60:
+            log.info( "USB Status: 0x{0:02X} 0x{1:02X}".format( *status ) )
           rv = rv[2:]
-        ret += rv
-      except usb.USBError:
+        for rvi in rv:
+          self._rxqueue.put( rvi )
+      except usb.USBError as e:
+        log.warn( "USB Error on _read {}".format( e ) )
         pass
-    return ret
+      time.sleep( self._rxinterval )
 
-  def read_text( self, timeout = None, attempts = 4 ):
-    return "".join( chr(a) for a in self.read( timeout, attempts ) )
+  def _getRxLen( self ):
+    return self._rxqueue.qsize()
+  rxlen = property( fget=_getRxLen )
+
+  def readBytes( self ):
+    rx = []
+    while not self._rxqueue.empty():
+      rx.append( self._rxqueue.get() )
+    return rx
+
+  def readText( self ):
+    return "".join( chr(c) for c in self.readBytes() )
+
+  def write( self, data ):
+    ret = self.ep_out.write( data )
+    if( len( data ) != ret ):
+      log.error( "Bytes written mismatch {0} vs {1}".format( len(data), ret)  )
+
 
 def configLog( ):
   log = logging.getLogger( )
@@ -183,7 +205,9 @@ def configInputQueue(  ):
   """
   def captureInput( iqueue ):
     while True:
-      iqueue.put( getch() )
+      c = getch()
+      log.debug( "Input Char '{}' received".format( c ) )
+      iqueue.put( c )
 
   input_queue = queue.Queue()
   input_thread = threading.Thread( target=lambda : captureInput( input_queue ) )
@@ -196,7 +220,7 @@ def fmt_text( text ):
   """
   PRINTABLE_CHAR = set(
             list(range(ord(' '), ord('~') + 1)) + [ ord('\r'), ord( '\n' ) ] )
-  newtext = ( "\\x{:02X}".format( ord(c) ) if ord(c) not in PRINTABLE_CHAR else c for c in text )
+  newtext = ( "\\x{:02X}".format( c ) if c not in PRINTABLE_CHAR else chr(c) for c in text )
   return "".join( newtext )
 
 def runTerminal( d ):
@@ -204,15 +228,13 @@ def runTerminal( d ):
   q = configInputQueue()
 
   while True:
-    time.sleep( 0.05 )
-    text = p.read_text( timeout=1 )
-    if len( text ):
-      print( fmt_text(text), end="" )
+    if p.rxlen:
+      print( fmt_text( p.readBytes() ), end="" )
 
     if not q.empty():
       command = q.get()
       print( command, end="" )
-      p.write(command)
+      p.write( command )
 
 log = configLog()
 getch = _Getch()            # init an instance
