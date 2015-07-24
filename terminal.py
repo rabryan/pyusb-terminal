@@ -14,24 +14,12 @@ import sys
 import time
 import usb.core as usb
 import threading
-
 import logging
 
 try:
   import Queue as queue
 except ImportError:
   import queue
-import os
-if os.name == "nt":
-  import msvcrt
-
-log = logging.getLogger( )
-log.setLevel( logging.DEBUG )
-fileHandler = logging.FileHandler( "terminal.log" )
-log_fmt = logging.Formatter(
-    "%(levelname)s %(name)s %(threadName)-10s %(funcName)s() %(message)s" )
-fileHandler.setFormatter( log_fmt )
-log.addHandler( fileHandler )
 
 
 # NOTE: getch taken from http://stackoverflow.com/questions/510357/python-read-a-single-character-from-the-user
@@ -78,9 +66,6 @@ class _GetchWindows(object):
   def __call__(self):
     import msvcrt
     return msvcrt.getch()
-
-getch = _Getch()
-
 
 class ComPort( object ):
   def __init__( self, usb_device ):
@@ -145,6 +130,16 @@ class ComPort( object ):
   def read_text( self, timeout = None, attempts = 4 ):
     return "".join( chr(a) for a in self.read( timeout, attempts ) )
 
+def configLog( ):
+  log = logging.getLogger( )
+  log.setLevel( logging.DEBUG )
+  fileHandler = logging.FileHandler( "terminal.log" )
+  log_fmt = logging.Formatter(
+      "%(levelname)s %(name)s %(threadName)-10s %(funcName)s() %(message)s" )
+  fileHandler.setFormatter( log_fmt )
+  log.addHandler( fileHandler )
+  return log
+
 def selectDevice( ):
   devices = list( usb.find( find_all=True ) )
 
@@ -183,37 +178,49 @@ def selectDevice( ):
 
   return d
 
-def readinput( queue ):
-  while True:
-    queue.put( getch() )
-
-
-if __name__ == '__main__':
-  d = selectDevice(  )
-
-  if d is None:
-    exit()
-
-  p = ComPort(d)
+def configInputQueue(  ):
+  """ configure a queue for accepting characters and return the queue
+  """
+  def captureInput( iqueue ):
+    while True:
+      iqueue.put( getch() )
 
   input_queue = queue.Queue()
-  input_thread = threading.Thread( target=lambda : readinput( input_queue ) )
+  input_thread = threading.Thread( target=lambda : captureInput( input_queue ) )
   input_thread.daemon = True
   input_thread.start()
+  return input_queue
+
+def fmt_text( text ):
+  """ convert characters that aren't printable to hex format
+  """
+  PRINTABLE_CHAR = set(
+            list(range(ord(' '), ord('~') + 1)) + [ ord('\r'), ord( '\n' ) ] )
+  newtext = ( "\\x{:02X}".format( ord(c) ) if ord(c) not in PRINTABLE_CHAR else c for c in text )
+  return "".join( newtext )
+
+def runTerminal( d ):
+  p = ComPort( d )
+  q = configInputQueue()
 
   while True:
-    time.sleep( 0.2 )
+    time.sleep( 0.05 )
     text = p.read_text( timeout=1 )
     if len( text ):
-      valid = set( list(range(ord(' '), ord('~') + 1)) + [ ord('\r'), ord( '\n' ) ] )
-      print(
-          "".join( "\\x{:02X}".format( ord(c) ) if ord(c) not in valid else c for c in text  ),
-          end="" )
+      print( fmt_text(text), end="" )
 
-    if not input_queue.empty():
-      command = input_queue.get()
+    if not q.empty():
+      command = q.get()
       print( command, end="" )
       p.write(command)
 
+log = configLog()
+getch = _Getch()            # init an instance
+
+if __name__ == '__main__':
+  d = selectDevice(  )
+  if d is None:
+    exit()
+  runTerminal( d )
 
 # vim:shiftwidth=2
