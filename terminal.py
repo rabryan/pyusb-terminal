@@ -34,12 +34,7 @@ class _Getch(object):
       self.impl = _GetchUnix()
 
   def __call__(self):
-    char = self.impl()
-    if char == '\x03':
-      raise KeyboardInterrupt
-    elif char == '\x04':
-      raise EOFError
-    return char
+    return self.impl()
 
 class _GetchUnix(object):
   def __init__(self):
@@ -67,13 +62,15 @@ class _GetchWindows(object):
     import msvcrt
     return msvcrt.getch()
 
+
 class ComPort( object ):
   def __init__( self, usb_device ):
     self.device = usb_device
     self._isFTDI = False
     self._rxinterval = 0.005            # sec
     self._rxqueue = queue.Queue()
-    self._rxthread = threading.Thread( target=self._read )
+    self._rxthread = None
+    self._rxactive = False
 
     cfg = usb_device.get_active_configuration()
 
@@ -113,12 +110,19 @@ class ComPort( object ):
     self._startRx()
 
   def _startRx( self ):
+    if self._rxthread is not None and (self._rxactive or self._rxthread.isAlive()):
+      return
+    self._rxactive = True
+    self._rxthread = threading.Thread( target=self._read )
     self._rxthread.daemon = True
     self._rxthread.start()
 
+  def _endRx( self ):
+    self._rxactive = False
+
   def _read( self ):
     """ check ep for data, add it to queue and sleep for interval """
-    while True:
+    while self._rxactive:
       try:
         rv = self.ep_in.read( self.ep_in.wMaxPacketSize )
         if self._isFTDI:
@@ -150,6 +154,8 @@ class ComPort( object ):
     ret = self.ep_out.write( data )
     if( len( data ) != ret ):
       log.error( "Bytes written mismatch {0} vs {1}".format( len(data), ret)  )
+    else:
+      log.debug( "{} bytes written to ep".format( ret ) )
 
 
 def configLog( ):
@@ -206,14 +212,18 @@ def configInputQueue(  ):
   def captureInput( iqueue ):
     while True:
       c = getch()
-      log.debug( "Input Char '{}' received".format( c ) )
+      if c == '\x03' or c == '\x04':    # end on ctrl+c / ctrl+d
+        log.debug( "Break received (\\x{0:02X})".format( ord( c ) ) )
+        iqueue.put( c )
+        break
+      log.debug( "Input Char '{}' received".format( c if c != '\r' else '\\r' ) )
       iqueue.put( c )
 
   input_queue = queue.Queue()
   input_thread = threading.Thread( target=lambda : captureInput( input_queue ) )
   input_thread.daemon = True
   input_thread.start()
-  return input_queue
+  return input_queue, input_thread
 
 def fmt_text( text ):
   """ convert characters that aren't printable to hex format
@@ -224,22 +234,25 @@ def fmt_text( text ):
   return "".join( newtext )
 
 def runTerminal( d ):
+  log.info( "Beginning a terminal run" )
   p = ComPort( d )
-  q = configInputQueue()
+  q, t = configInputQueue()
 
   while True:
     if p.rxlen:
       print( fmt_text( p.readBytes() ), end="" )
 
     if not q.empty():
-      command = q.get()
-      print( command, end="" )
-      p.write( command )
-
-log = configLog()
-getch = _Getch()            # init an instance
+      c = q.get()
+      if c == '\x03' or c == '\x04':    # end on ctrl+c / ctrl+d
+        print()
+        break;
+      p.write( c )
 
 if __name__ == '__main__':
+  log = configLog()
+  getch = _Getch()            # init an instance
+
   d = selectDevice(  )
   if d is None:
     exit()
