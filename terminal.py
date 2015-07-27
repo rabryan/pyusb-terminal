@@ -62,9 +62,8 @@ class _GetchWindows(object):
     import msvcrt
     return msvcrt.getch()
 
-
 class ComPort( object ):
-  def __init__( self, usb_device ):
+  def __init__( self, usb_device, start=True ):
     self.device = usb_device
     self._isFTDI = False
     self._rxinterval = 0.005            # sec
@@ -107,7 +106,8 @@ class ComPort( object ):
     self.ep_out = usb.util.find_descriptor( data_itf,
         custom_match = lambda e: not (e.bEndpointAddress & 0x80))
 
-    self._startRx()
+    if start:
+      self._startRx()
 
   def _startRx( self ):
     if self._rxthread is not None and (self._rxactive or self._rxthread.isAlive()):
@@ -157,6 +157,26 @@ class ComPort( object ):
     else:
       log.debug( "{} bytes written to ep".format( ret ) )
 
+  def disconnect( self ):
+    self._endRx()
+    while self._rxthread is not None and self._rxthread.isAlive():
+      pass
+    if self._rxthread is None:
+      log.debug( "Rx thread never existed" )
+    else:
+      log.debug( "Rx thread is {}".format(
+        "alive" if self._rxthread.isAlive() else "dead" ) )
+    attempt=1
+    while attempt < 10:
+      try:
+        self.device.attach_kernel_driver( 0 )
+        log.debug( "Attach kernal driver on attempt {0}".format( attempt ) )
+        break
+      except usb.USBError:
+        attempt += 1
+        time.sleep( 0.1 )     # sleep seconds
+    if attempt == 10:
+      log.error( "Could not attach kernal driver" )
 
 def configLog( ):
   log = logging.getLogger( )
@@ -246,6 +266,7 @@ def runTerminal( d ):
       c = q.get()
       if c == '\x03' or c == '\x04':    # end on ctrl+c / ctrl+d
         print()
+        p.disconnect()
         break;
       p.write( c )
 
@@ -256,6 +277,11 @@ if __name__ == '__main__':
   d = selectDevice(  )
   if d is None:
     exit()
-  runTerminal( d )
+
+  if sys.argv[-1] == '-x':
+    p = ComPort( d, start=False )
+    p.disconnect()
+  else:
+    runTerminal( d )
 
 # vim:shiftwidth=2
