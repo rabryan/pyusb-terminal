@@ -161,6 +161,7 @@ class ComPort( object ):
     self._endRx()
     while self._rxthread is not None and self._rxthread.isAlive():
       pass
+    usb.util.dispose_resources( self.device )
     if self._rxthread is None:
       log.debug( "Rx thread never existed" )
     else:
