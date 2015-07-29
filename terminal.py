@@ -295,6 +295,9 @@ class ComPort( object ):
       except usb.USBError:
         attempt += 1
         time.sleep( 0.1 )     # sleep seconds
+      except NotImplementedError: #on windows
+        break
+
     if attempt == 10:
       log.error( "Could not attach kernal driver" )
 
@@ -354,7 +357,7 @@ def configInputQueue(  ):
   def captureInput( iqueue ):
     while True:
       c = getch()
-      if c == '\x03' or c == '\x04':    # end on ctrl+c / ctrl+d
+      if c in { '\03', '\04', b'\03', b'\04' }:    # end on ctrl+c / ctrl+d
         log.debug( "Break received (\\x{0:02X})".format( ord( c ) ) )
         iqueue.put( c )
         break
@@ -386,7 +389,7 @@ def runTerminal( d ):
 
     if not q.empty():
       c = q.get()
-      if c == '\x03' or c == '\x04':    # end on ctrl+c / ctrl+d
+      if c in { '\03', '\04', b'\03', b'\04' }:    # end on ctrl+c / ctrl+d
         print()
         p.disconnect()
         break;
