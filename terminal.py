@@ -48,15 +48,17 @@ try:
 except ImportError:
   import queue
 
-CDC_SEND_ENCAPSULATED_COMMAND=0x00
-CDC_GET_ENCAPSULATED_RESPONSE=0x01
-CDC_SET_COMM_FEATURE=0x02
-CDC_GET_COMM_FEATURE=0x03
-CDC_CLEAR_COMM_FEATURE=0x04
-CDC_SET_LINE_CODING=0x20
-CDC_GET_LINE_CODING=0x21
-CDC_SET_CONTROL_LINE_STATE=0x22
-CDC_SEND_BREAK=0x23     # wValue is break time
+CDC_CMDS = {
+        "SEND_ENCAPSULATED_COMMAND" :   0x00,
+        "GET_ENCAPSULATED_RESPONSE" :   0x01,
+        "SET_COMM_FEATURE" :            0x02,
+        "GET_COMM_FEATURE" :            0x03,
+        "CLEAR_COMM_FEATURE" :          0x04,
+        "SET_LINE_CODING" :             0x20,
+        "GET_LINE_CODING" :             0x21,
+        "SET_CONTROL_LINE_STATE" :      0x22,
+        "SEND_BREAK" :                  0x23,   # wValue is break time
+        }
 
 
 # NOTE: getch taken from http://stackoverflow.com/questions/510357/python-read-a-single-character-from-the-user
@@ -170,7 +172,7 @@ class ComPort( object ):
     recipient = 1       # 0:device, 1:interface, 2:endpoint, 3:other
     req_type = (txdir<<7) + (req_type<<5) + recipient
 
-    wlen = self.device.ctrl_transfer( req_type, CDC_SET_CONTROL_LINE_STATE,
+    wlen = self.device.ctrl_transfer( req_type, CDC_CMDS["SET_CONTROL_LINE_STATE"],
         data_or_wLength=ctrlstate )
     log.debug( "Linecoding set, {}b sent".format( wlen ) )
 
@@ -216,7 +218,7 @@ class ComPort( object ):
     recipient = 1       # 0:device, 1:interface, 2:endpoint, 3:other
     req_type = (txdir<<7) + (req_type<<5) + recipient
 
-    wlen = self.device.ctrl_transfer( req_type, CDC_SET_LINE_CODING,
+    wlen = self.device.ctrl_transfer( req_type, CDC_CMDS["SET_LINE_CODING"],
         data_or_wLength=linecode )
     log.debug( "Linecoding set, {}b sent".format( wlen ) )
 
@@ -226,7 +228,7 @@ class ComPort( object ):
     recipient = 1       # 0:device, 1:interface, 2:endpoint, 3:other
     req_type = (txdir<<7) + (req_type<<5) + recipient
 
-    buf = self.device.ctrl_transfer( req_type, CDC_GET_LINE_CODING,
+    buf = self.device.ctrl_transfer( req_type, CDC_CMDS["GET_LINE_CODING"],
         data_or_wLength=7 )
     self.baudrate = buf[0] + ( buf[1] << 8 ) + ( buf[2] << 16 ) + ( buf[3] << 24 )
     self.stopbits = 1 + ( buf[4] / 2.0 )
@@ -317,6 +319,7 @@ def selectDevice( ):
   selection = -1
   selected = False
 
+  print( "PyUSB VCP Terminal: use ctrl+c or ctrl+d to exit" )
   while not selected:
     for i,d in enumerate( devices ):
       try:
