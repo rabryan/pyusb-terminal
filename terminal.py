@@ -110,7 +110,7 @@ class ComPort( object ):
     self._rxactive = False
     self.baudrate = 9600
     self.parity = 0
-    self.stopbits = 0
+    self.stopbits = 1
     self.databits = 8
 
     cfg = usb_device.get_active_configuration()
